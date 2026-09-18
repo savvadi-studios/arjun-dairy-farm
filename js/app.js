@@ -1,15 +1,16 @@
 // ==========================================================================
 // ARJUN DAIRY FARM - JAVASCRIPT APPLICATION LOGIC
-// Sandya Mana Telugu Ammayi (@SandyaLingam)
-// Crafted by Savvadi Studios (savvadi.studios@gmail.com)
+// High-Converting, Product-Centric, Animated & Interactive
+// Engineered by Savvadi Studios (savvadi.studios@gmail.com)
 // ==========================================================================
 
 document.addEventListener("DOMContentLoaded", () => {
   // --- State ---
   let currentCategory = "all";
+  let searchQuery = "";
   let cart = JSON.parse(localStorage.getItem("arjun_dairy_cart")) || [];
 
-  // Selected variant per product ID (default to first variant)
+  // Selected variant per product ID
   const selectedVariants = {};
   if (typeof PRODUCTS !== "undefined") {
     PRODUCTS.forEach(p => {
@@ -17,9 +18,16 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // --- Elements ---
+  // Active modal product state
+  let modalProduct = null;
+  let modalVariantIndex = 0;
+
+  // --- DOM Elements ---
   const productsGrid = document.getElementById("productsGrid");
-  const tabBtns = document.querySelectorAll(".tab-btn");
+  const productSearchInput = document.getElementById("productSearchInput");
+  const filterPills = document.querySelectorAll(".filter-pill");
+  
+  // Cart Elements
   const cartDrawer = document.getElementById("cartDrawer");
   const cartOverlay = document.getElementById("cartOverlay");
   const openCartBtns = document.querySelectorAll(".open-cart-btn");
@@ -29,7 +37,22 @@ document.addEventListener("DOMContentLoaded", () => {
   const cartSubtotalEl = document.getElementById("cartSubtotal");
   const cartCountBadges = document.querySelectorAll(".cart-count");
   const checkoutWhatsAppBtn = document.getElementById("checkoutWhatsAppBtn");
-  
+
+  // Quick View Modal Elements
+  const quickViewModal = document.getElementById("quickViewModal");
+  const closeModalBtn = document.getElementById("closeModalBtn");
+  const modalImg = document.getElementById("modalImg");
+  const modalCategory = document.getElementById("modalCategory");
+  const modalTitle = document.getElementById("modalTitle");
+  const modalTelugu = document.getElementById("modalTelugu");
+  const modalDesc = document.getElementById("modalDesc");
+  const modalNutrition = document.getElementById("modalNutrition");
+  const modalIngredients = document.getElementById("modalIngredients");
+  const modalShelfLife = document.getElementById("modalShelfLife");
+  const modalVariants = document.getElementById("modalVariants");
+  const modalPrice = document.getElementById("modalPrice");
+  const modalAddToCartBtn = document.getElementById("modalAddToCartBtn");
+
   // Mobile Menu Elements
   const menuToggleBtn = document.getElementById("menuToggleBtn");
   const mobileDrawer = document.getElementById("mobileDrawer");
@@ -37,55 +60,92 @@ document.addEventListener("DOMContentLoaded", () => {
   const closeMobileMenuBtn = document.getElementById("closeMobileMenuBtn");
   const mobileNavLinks = document.querySelectorAll(".mobile-nav-link");
 
-  // Store Hours Pill
+  // Store Hours Status Elements
   const liveStatusPill = document.getElementById("liveStatusPill");
   const liveStatusText = document.getElementById("liveStatusText");
 
-  // Toast
+  // Toast Element
   const toastMsg = document.getElementById("toastMsg");
 
   // --- Functions ---
 
-  // 1. Check Store Operating Hours (IST: 6:00-8:30 AM & 6:00-8:30 PM)
+  // 1. Evaluate Store Operating Hours (IST: 6:00-8:30 AM & 6:00-8:30 PM)
   function checkStoreStatus() {
     if (!liveStatusPill || !liveStatusText) return;
 
-    // Get current Indian Standard Time (UTC+5:30)
     const now = new Date();
     const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
     const istTime = new Date(utc + (3600000 * 5.5));
-    const hours = istTime.getHours();
-    const minutes = istTime.getMinutes();
-    const totalMinutes = hours * 60 + minutes;
+    const totalMinutes = istTime.getHours() * 60 + istTime.getMinutes();
 
-    // Slots: 06:00 (360) to 08:30 (510) and 18:00 (1080) to 20:30 (1230)
-    const morningStart = 6 * 60; // 360
-    const morningEnd = 8 * 60 + 30; // 510
-    const eveningStart = 18 * 60; // 1080
-    const eveningEnd = 20 * 60 + 30; // 1230
+    const morningStart = 6 * 60; // 06:00
+    const morningEnd = 8 * 60 + 30; // 08:30
+    const eveningStart = 18 * 60; // 18:00
+    const eveningEnd = 20 * 60 + 30; // 20:30
 
     const isMorningOpen = totalMinutes >= morningStart && totalMinutes <= morningEnd;
     const isEveningOpen = totalMinutes >= eveningStart && totalMinutes <= eveningEnd;
 
     if (isMorningOpen || isEveningOpen) {
-      liveStatusPill.className = "live-status-pill open";
+      liveStatusPill.className = "live-badge open";
       liveStatusText.textContent = "🟢 Store Open Now in Mancherial (Fresh Batch Ready)";
     } else {
-      liveStatusPill.className = "live-status-pill closed";
-      let nextTime = totalMinutes < morningStart ? "6:00 AM (Morning Batch)" : (totalMinutes < eveningStart ? "6:00 PM (Evening Batch)" : "6:00 AM Tomorrow");
+      liveStatusPill.className = "live-badge closed";
+      let nextTime = totalMinutes < morningStart 
+        ? "6:00 AM (Morning Milking Batch)" 
+        : (totalMinutes < eveningStart ? "6:00 PM (Evening Milking Batch)" : "6:00 AM Tomorrow");
       liveStatusText.textContent = `🟡 Store opens at ${nextTime} (WhatsApp orders 24/7)`;
     }
   }
 
-  // 2. Render Products
+  // 2. Render Product Cards
   function renderProducts() {
     if (!productsGrid || typeof PRODUCTS === "undefined") return;
 
-    const filtered = currentCategory === "all" 
-      ? PRODUCTS 
-      : PRODUCTS.filter(p => p.category === currentCategory);
+    // Filter by category & search query
+    let list = PRODUCTS;
 
-    productsGrid.innerHTML = filtered.map(product => {
+    if (currentCategory !== "all") {
+      list = list.filter(p => p.category === currentCategory);
+    }
+
+    if (searchQuery.trim() !== "") {
+      const q = searchQuery.toLowerCase();
+      list = list.filter(p => 
+        p.name.toLowerCase().includes(q) ||
+        p.teluguName.includes(q) ||
+        p.categoryLabel.toLowerCase().includes(q) ||
+        p.description.toLowerCase().includes(q) ||
+        p.features.some(f => f.toLowerCase().includes(q))
+      );
+    }
+
+    if (list.length === 0) {
+      productsGrid.innerHTML = `
+        <div style="grid-column: 1 / -1; text-align: center; padding: 60px 20px; color: #666;">
+          <div style="font-size: 3rem; margin-bottom: 12px;">🔍</div>
+          <h3 style="color: #0f2c20;">No products found matching "${searchQuery}"</h3>
+          <p style="font-size: 0.9rem; margin-top: 6px;">Try searching for "Milk", "Ghee", "Paneer", or clear your filter.</p>
+          <button type="button" class="btn btn-outline" id="resetSearchBtn" style="margin-top: 16px;">
+            Reset Search
+          </button>
+        </div>
+      `;
+      const resetBtn = document.getElementById("resetSearchBtn");
+      if (resetBtn) {
+        resetBtn.addEventListener("click", () => {
+          if (productSearchInput) productSearchInput.value = "";
+          searchQuery = "";
+          currentCategory = "all";
+          filterPills.forEach(p => p.classList.remove("active"));
+          document.querySelector('.filter-pill[data-category="all"]')?.classList.add("active");
+          renderProducts();
+        });
+      }
+      return;
+    }
+
+    productsGrid.innerHTML = list.map(product => {
       const activeVariantIdx = selectedVariants[product.id] || 0;
       const activeVariant = product.variants[activeVariantIdx] || product.variants[0];
 
@@ -93,16 +153,20 @@ document.addEventListener("DOMContentLoaded", () => {
         <article class="product-card" data-id="${product.id}">
           <div class="product-media">
             <img src="${product.image}" alt="${product.name}" loading="lazy" />
-            <span class="product-tag">${product.tag}</span>
-            ${product.isBestseller ? '<span class="bestseller-badge">★ Bestseller</span>' : ''}
+            <span class="product-badge-tag">${product.tag}</span>
+            ${product.isBestseller ? '<span class="bestseller-shimmer">★ Bestseller</span>' : ''}
+            <button type="button" class="btn-quick-view" data-quick-view="${product.id}">
+              👁️ Quick View & Facts
+            </button>
           </div>
           <div class="product-body">
-            <div class="product-telugu">${product.teluguName}</div>
+            <span class="product-category-label">${product.categoryLabel}</span>
             <h3 class="product-title">${product.name}</h3>
+            <div class="product-telugu-name">${product.teluguName}</div>
             <p class="product-desc">${product.description}</p>
             
             <div class="variant-selector-wrap">
-              <span class="variant-label">Choose Pack Size:</span>
+              <span class="variant-label">Choose Size:</span>
               <div class="variant-pills">
                 ${product.variants.map((v, idx) => `
                   <button type="button" 
@@ -116,13 +180,13 @@ document.addEventListener("DOMContentLoaded", () => {
             </div>
 
             <div class="product-footer">
-              <div class="product-price-box">
-                <span class="price-currency">Price</span>
-                <span class="price-amount">₹${activeVariant.price}</span>
+              <div class="price-box">
+                <span class="price-unit">Price</span>
+                <span class="price-val">₹${activeVariant.price}</span>
               </div>
-              <div class="product-card-actions">
-                <button class="btn btn-primary btn-add-cart" data-id="${product.id}" title="Add to Cart">
-                  🛒 Add to Cart
+              <div class="card-cta-group">
+                <button class="btn btn-add-item" data-id="${product.id}" title="Add to Cart">
+                  🛒 Add
                 </button>
                 <button class="btn btn-whatsapp" data-quick-wa="${product.id}" style="padding: 8px 12px; font-size: 0.82rem;" title="Order via WhatsApp">
                   💬 Order
@@ -140,7 +204,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // 3. Attach Events to Product Cards
   function attachProductCardEvents() {
     // Variant Pills
-    document.querySelectorAll(".variant-pill").forEach(pill => {
+    document.querySelectorAll(".product-card .variant-pill").forEach(pill => {
       pill.addEventListener("click", (e) => {
         const id = e.target.dataset.id;
         const idx = parseInt(e.target.dataset.index, 10);
@@ -150,28 +214,118 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     // Add to Cart
-    document.querySelectorAll(".btn-add-cart").forEach(btn => {
+    document.querySelectorAll(".btn-add-item").forEach(btn => {
       btn.addEventListener("click", (e) => {
         const id = e.currentTarget.dataset.id;
         addToCart(id);
       });
     });
 
-    // Quick WhatsApp Single Item
+    // Single item direct WhatsApp order
     document.querySelectorAll("[data-quick-wa]").forEach(btn => {
       btn.addEventListener("click", (e) => {
         const id = e.currentTarget.dataset.quickWa;
         quickOrderWhatsApp(id);
       });
     });
+
+    // Quick View Modal
+    document.querySelectorAll("[data-quick-view]").forEach(btn => {
+      btn.addEventListener("click", (e) => {
+        const id = e.currentTarget.dataset.quickView;
+        openQuickViewModal(id);
+      });
+    });
   }
 
-  // 4. Add to Cart Logic
-  function addToCart(productId) {
+  // 4. Quick View Modal Logic
+  function openQuickViewModal(productId) {
+    modalProduct = PRODUCTS.find(p => p.id === productId);
+    if (!modalProduct || !quickViewModal) return;
+
+    modalVariantIndex = selectedVariants[productId] || 0;
+
+    modalImg.src = modalProduct.image;
+    modalImg.alt = modalProduct.name;
+    modalCategory.textContent = modalProduct.categoryLabel;
+    modalTitle.textContent = modalProduct.name;
+    modalTelugu.textContent = modalProduct.teluguName;
+    modalDesc.textContent = modalProduct.description;
+
+    // Nutrition facts
+    const nut = modalProduct.nutrition || {};
+    modalNutrition.innerHTML = Object.entries(nut).map(([k, v]) => `
+      <div style="display: flex; justify-content: space-between; padding: 2px 0;">
+        <span style="text-transform: capitalize;">${k}:</span>
+        <strong>${v}</strong>
+      </div>
+    `).join("");
+
+    modalIngredients.textContent = modalProduct.ingredients || "100% Pure Farm Ingredients";
+    modalShelfLife.textContent = modalProduct.shelfLife || "Fresh Daily";
+
+    renderModalVariants();
+    updateModalPrice();
+
+    quickViewModal.classList.add("open");
+    document.body.style.overflow = "hidden";
+  }
+
+  function renderModalVariants() {
+    if (!modalProduct || !modalVariants) return;
+    modalVariants.innerHTML = modalProduct.variants.map((v, idx) => `
+      <button type="button" 
+        class="variant-pill ${idx === modalVariantIndex ? 'active' : ''}" 
+        data-modal-index="${idx}">
+        ${v.size}
+      </button>
+    `).join("");
+
+    modalVariants.querySelectorAll(".variant-pill").forEach(pill => {
+      pill.addEventListener("click", (e) => {
+        modalVariantIndex = parseInt(e.currentTarget.dataset.modalIndex, 10);
+        selectedVariants[modalProduct.id] = modalVariantIndex;
+        renderModalVariants();
+        updateModalPrice();
+        renderProducts(); // sync grid
+      });
+    });
+  }
+
+  function updateModalPrice() {
+    if (!modalProduct || !modalPrice) return;
+    const v = modalProduct.variants[modalVariantIndex] || modalProduct.variants[0];
+    modalPrice.textContent = `₹${v.price}`;
+  }
+
+  if (modalAddToCartBtn) {
+    modalAddToCartBtn.addEventListener("click", () => {
+      if (!modalProduct) return;
+      addToCart(modalProduct.id, modalVariantIndex);
+      closeQuickViewModal();
+    });
+  }
+
+  function closeQuickViewModal() {
+    if (quickViewModal) {
+      quickViewModal.classList.remove("open");
+      document.body.style.overflow = "";
+    }
+  }
+
+  if (closeModalBtn) closeModalBtn.addEventListener("click", closeQuickViewModal);
+  if (quickViewModal) {
+    quickViewModal.addEventListener("click", (e) => {
+      if (e.target === quickViewModal) closeQuickViewModal();
+    });
+  }
+
+  // 5. Add to Cart Logic
+  function addToCart(productId, explicitVariantIdx = null) {
     const product = PRODUCTS.find(p => p.id === productId);
     if (!product) return;
 
-    const variantIdx = selectedVariants[productId] || 0;
+    const variantIdx = explicitVariantIdx !== null ? explicitVariantIdx : (selectedVariants[productId] || 0);
     const variant = product.variants[variantIdx];
     const cartItemId = `${productId}-${variant.size}`;
 
@@ -194,25 +348,29 @@ document.addEventListener("DOMContentLoaded", () => {
     saveCart();
     updateCartUI();
     showToast(`Added ${product.name} (${variant.size}) to cart!`);
+
+    // Bump cart counter animation
+    cartCountBadges.forEach(badge => {
+      badge.classList.remove("bump");
+      void badge.offsetWidth; // trigger reflow
+      badge.classList.add("bump");
+    });
   }
 
-  // 5. Save & Update Cart UI
+  // 6. Save & Update Cart UI
   function saveCart() {
     localStorage.setItem("arjun_dairy_cart", JSON.stringify(cart));
   }
 
   function updateCartUI() {
-    // Total items count
     const totalQty = cart.reduce((sum, item) => sum + item.qty, 0);
     cartCountBadges.forEach(b => b.textContent = totalQty);
 
-    // Subtotal
     const subtotal = cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
     if (cartSubtotalEl) {
       cartSubtotalEl.textContent = `₹${subtotal}`;
     }
 
-    // Render items
     if (!cartItemsContainer || !cartEmptyState) return;
 
     if (cart.length === 0) {
@@ -282,23 +440,22 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // 6. WhatsApp Dispatcher
+  // 7. WhatsApp Order Dispatcher
   function quickOrderWhatsApp(productId) {
     const product = PRODUCTS.find(p => p.id === productId);
     if (!product) return;
     const variantIdx = selectedVariants[productId] || 0;
     const variant = product.variants[variantIdx];
 
-    const message = `Namaskaram Sandya garu / Arjun Dairy Farm! 🙏
+    const message = `Namaskaram Arjun Dairy Farm! 🙏
 I would like to order:
 🥛 *${product.name}* (${product.teluguName})
 📦 Size/Weight: *${variant.size}*
 💰 Price: *₹${variant.price}*
 
-Please let me know the availability and payment details. Thank you!`;
+Please confirm availability and delivery slot. Thank you!`;
 
-    const encoded = encodeURIComponent(message);
-    window.open(`https://wa.me/916281641447?text=${encoded}`, "_blank");
+    window.open(`https://wa.me/916281641447?text=${encodeURIComponent(message)}`, "_blank");
   }
 
   function checkoutViaWhatsApp() {
@@ -309,7 +466,7 @@ Please let me know the availability and payment details. Thank you!`;
 
     const customerName = document.getElementById("custName")?.value.trim() || "Customer";
     const customerPhone = document.getElementById("custPhone")?.value.trim() || "Not specified";
-    const customerAddress = document.getElementById("custAddress")?.value.trim() || "Store Pickup / Direct Message";
+    const customerAddress = document.getElementById("custAddress")?.value.trim() || "Store Pickup / Direct Delivery";
     const deliverySlot = document.getElementById("deliverySlot")?.value || "Morning Batch (6:00 - 8:30 AM)";
 
     const subtotal = cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
@@ -318,31 +475,30 @@ Please let me know the availability and payment details. Thank you!`;
       `${i + 1}. *${item.name}* (${item.size}) × ${item.qty} = ₹${item.price * item.qty}`
     ).join("\n");
 
-    const message = `Namaskaram Sandya garu / Arjun Dairy Farm! 🙏
-I would like to place an order from your website:
+    const message = `Namaskaram Arjun Dairy Farm! 🙏
+I would like to place an order:
 
 📋 *ORDER ITEMS:*
 ${itemsList}
 
-💵 *Estimated Total:* ₹${subtotal}
+💵 *Estimated Subtotal:* ₹${subtotal}
 🚚 *Delivery Preference:* ${deliverySlot}
 
 👤 *Customer Details:*
 • Name: ${customerName}
 • Phone: ${customerPhone}
-• Delivery Address / Area: ${customerAddress}
+• Delivery Area / Address: ${customerAddress}
 
 Please confirm my order and share payment details (UPI/Cash). Thank you!`;
 
-    const encoded = encodeURIComponent(message);
-    window.open(`https://wa.me/916281641447?text=${encoded}`, "_blank");
+    window.open(`https://wa.me/916281641447?text=${encodeURIComponent(message)}`, "_blank");
   }
 
   if (checkoutWhatsAppBtn) {
     checkoutWhatsAppBtn.addEventListener("click", checkoutViaWhatsApp);
   }
 
-  // 7. Toast Notification
+  // 8. Toast
   function showToast(text) {
     if (!toastMsg) return;
     toastMsg.textContent = text;
@@ -352,7 +508,7 @@ Please confirm my order and share payment details (UPI/Cash). Thank you!`;
     }, 2800);
   }
 
-  // 8. Drawers & Navigation Controls
+  // 9. Drawer Controls
   function openCart() {
     if (cartDrawer && cartOverlay) {
       cartDrawer.classList.add("open");
@@ -395,26 +551,43 @@ Please confirm my order and share payment details (UPI/Cash). Thank you!`;
   if (mobileOverlay) mobileOverlay.addEventListener("click", closeMobileMenu);
   mobileNavLinks.forEach(link => link.addEventListener("click", closeMobileMenu));
 
-  // 9. Tab Category Filters
-  tabBtns.forEach(btn => {
-    btn.addEventListener("click", () => {
-      tabBtns.forEach(b => b.classList.remove("active"));
-      btn.classList.add("active");
-      currentCategory = btn.dataset.category;
+  // Escape key closes modals/drawers
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      closeCart();
+      closeMobileMenu();
+      closeQuickViewModal();
+    }
+  });
+
+  // 10. Filter Pills & Live Search
+  filterPills.forEach(pill => {
+    pill.addEventListener("click", () => {
+      filterPills.forEach(p => p.classList.remove("active"));
+      pill.classList.add("active");
+      currentCategory = pill.dataset.category;
       renderProducts();
     });
   });
 
-  // Contact Form quick alert
+  if (productSearchInput) {
+    productSearchInput.addEventListener("input", (e) => {
+      searchQuery = e.target.value;
+      renderProducts();
+    });
+  }
+
+  // 11. Contact Form Submit
   const contactForm = document.getElementById("contactForm");
   if (contactForm) {
     contactForm.addEventListener("submit", (e) => {
       e.preventDefault();
       const name = document.getElementById("msgName")?.value || "";
+      const phone = document.getElementById("msgPhone")?.value || "";
       const query = document.getElementById("msgBody")?.value || "";
-      const msg = `Namaskaram Sandya garu, my name is ${name}. ${query}`;
+      const msg = `Namaskaram Arjun Dairy Farm! My name is ${name} (${phone}).\nQuery: ${query}`;
       window.open(`https://wa.me/916281641447?text=${encodeURIComponent(msg)}`, "_blank");
-      showToast("Redirecting to WhatsApp to send message...");
+      showToast("Opening WhatsApp to send your inquiry...");
     });
   }
 
@@ -422,5 +595,5 @@ Please confirm my order and share payment details (UPI/Cash). Thank you!`;
   renderProducts();
   updateCartUI();
   checkStoreStatus();
-  setInterval(checkStoreStatus, 60000); // refresh status every minute
+  setInterval(checkStoreStatus, 60000);
 });
